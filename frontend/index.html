@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentinel Cyber Threat Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="dashboard-container">
+        <header>
+            <div class="logo">
+                <div class="shield-icon"></div>
+                <h1>Sentinel <span>AI</span></h1>
+            </div>
+            <div class="system-status">
+                <span class="pulse"></span> Live Monitoring Active
+            </div>
+        </header>
+
+        <main>
+            <div class="stats-row">
+                <div class="stat-card">
+                    <h3>Total Requests</h3>
+                    <p id="totalRequests">--</p>
+                </div>
+                <div class="stat-card threat-card">
+                    <h3>Active Threats</h3>
+                    <p id="activeThreats">--</p>
+                </div>
+                <div class="stat-card critical-card">
+                    <h3>Critical Alerts</h3>
+                    <p id="criticalAlerts">--</p>
+                </div>
+            </div>
+
+            <div
+                style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center; background: var(--card-bg); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color);">
+                <input type="file" id="fileInput" accept=".csv" style="color: var(--text-color);">
+                <button id="uploadBtn" class="refresh-btn">Upload & Analyze</button>
+            </div>
+
+            <div class="table-container">
+                <div class="table-header">
+                    <h2>Live Threat Detection Logs</h2>
+                    <button id="refreshBtn" class="refresh-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M21 2v6h-6" />
+                            <path d="M3 12a9 9 0 1 0 2.63-6.37L2 12" />
+                            <path d="M3 2v6h6" />
+                        </svg>
+                        Refresh Logs
+                    </button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>IP Address</th>
+                            <th>Status</th>
+                            <th>Threat Type</th>
+                            <th>Risk Score</th>
+                            <th>Suggested Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logsBody">
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
