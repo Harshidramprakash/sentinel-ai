@@ -6,68 +6,74 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.decomposition import PCA
-from flaml import AutoML
+from sklearn.tree import DecisionTreeClassifier
 from flask import Flask, jsonify, request
 
 app = Flask(__name__, static_folder='frontend')
-
-# 1. REMOVE ALL RANDOMNESS
 np.random.seed(42)
-
-# Global objects
 scaler = None
 pca = None
 iso_forest = None
-automl = None
+clf = None
 
 MODEL_DIR = "models"
 SCALER_PATH = os.path.join(MODEL_DIR, "scaler.pkl")
 IF_PATH = os.path.join(MODEL_DIR, "iso_forest.pkl")
 PCA_PATH = os.path.join(MODEL_DIR, "pca.pkl")
-AUTOML_PATH = os.path.join(MODEL_DIR, "automl.pkl")
 
-def initialize_models():
-    global scaler, pca, iso_forest, automl
+def initialize_models(force_retrain=False):
+    global scaler, pca, iso_forest
     os.makedirs(MODEL_DIR, exist_ok=True)
     
-    if os.path.exists(SCALER_PATH) and os.path.exists(IF_PATH) and os.path.exists(PCA_PATH) and os.path.exists(AUTOML_PATH):
-        scaler = joblib.load(SCALER_PATH)
-        iso_forest = joblib.load(IF_PATH)
-        pca = joblib.load(PCA_PATH)
-        automl = joblib.load(AUTOML_PATH)
-    else:
-        df_train = pd.DataFrame({
-            "login_attempts": np.random.randint(1, 50, 500),
-            "request_rate": np.random.randint(10, 500, 500),
-            "time_of_day": np.random.randint(0, 24, 500)
-        })
-        df_train['request_intensity'] = df_train['request_rate'] / (df_train['login_attempts'] + 1)
-        df_train['login_rate_flag'] = (df_train['login_attempts'] > 30).astype(int)
-        
-        log_cols = ['login_attempts', 'request_rate', 'request_intensity']
-        log_features = np.log1p(df_train[log_cols])
-        features_to_scale = pd.concat([log_features, df_train[['time_of_day', 'login_rate_flag']]], axis=1)
-        
-        scaler = StandardScaler()
-        scaled_features = scaler.fit_transform(features_to_scale)
-        
-        pca = PCA(n_components=2)
-        pca_features = pca.fit_transform(scaled_features)
-        
-        iso_forest = IsolationForest(contamination=0.25, random_state=42)
-        iso_forest.fit(pca_features)
-        
-        joblib.dump(scaler, SCALER_PATH)
-        joblib.dump(iso_forest, IF_PATH)
-        joblib.dump(pca, PCA_PATH)
+    if not force_retrain and os.path.exists(SCALER_PATH) and os.path.exists(IF_PATH) and os.path.exists(PCA_PATH):
+        try:
+            scaler = joblib.load(SCALER_PATH)
+            iso_forest = joblib.load(IF_PATH)
+            pca = joblib.load(PCA_PATH)
+            return
+        except Exception:
+            pass
+            
+    df_train = pd.DataFrame({
+        "login_attempts": np.random.randint(1, 50, 500),
+        "request_rate": np.random.randint(10, 500, 500),
+        "time_of_day": np.random.randint(0, 24, 500)
+    })
+    df_train['request_intensity'] = df_train['request_rate'] / (df_train['login_attempts'] + 1)
+    df_train['login_rate_flag'] = (df_train['login_attempts'] > 30).astype(int)
+    
+    log_cols = ['login_attempts', 'request_rate', 'request_intensity']
+    log_features = np.log1p(df_train[log_cols])
+    
+    features_to_scale = pd.DataFrame({
+        'login_attempts': log_features['login_attempts'],
+        'request_rate': log_features['request_rate'],
+        'request_intensity': log_features['request_intensity'],
+        'time_of_day': df_train['time_of_day'],
+        'login_rate_flag': df_train['login_rate_flag']
+    })
+    
+    scaler = StandardScaler()
+    scaled_features = scaler.fit_transform(features_to_scale)
+    
+    pca = PCA(n_components=2)
+    pca_features = pca.fit_transform(scaled_features)
+    
+    iso_forest = IsolationForest(contamination=0.12, random_state=42)
+    iso_forest.fit(pca_features)
+    
+    joblib.dump(scaler, SCALER_PATH)
+    joblib.dump(iso_forest, IF_PATH)
+    joblib.dump(pca, PCA_PATH)
 
-        X_syn = np.random.rand(500, 2) * 3
-        threats = ['DDoS', 'Brute Force', 'SQL Injection', 'Port Scanning', 'Unusual Access']
-        y_syn = np.random.choice(threats, 500)
-        
-        automl = AutoML()
-        automl.fit(X_train=X_syn, y_train=y_syn, task="classification", time_budget=5, verbose=0)
-        joblib.dump(automl, AUTOML_PATH)
+def initialize_classifier():
+    global clf
+    X_syn = np.random.rand(500, 2)
+    threats = ['DDoS', 'Brute Force', 'SQL Injection', 'Port Scanning', 'Unusual Access']
+    y_syn = np.random.choice(threats, 500)
+    
+    clf = DecisionTreeClassifier(random_state=42)
+    clf.fit(X_syn, y_syn)
 
 def generate_dummy_csv(filename="logs.csv"):
     if not os.path.exists(filename):
@@ -81,6 +87,10 @@ def generate_dummy_csv(filename="logs.csv"):
 
 def preprocessing(df):
     global scaler
+    if 'login_attempts' not in df.columns:
+        df['login_attempts'] = 0
+    if 'request_rate' not in df.columns:
+        df['request_rate'] = 0
     if 'time_of_day' not in df.columns:
         df['time_of_day'] = df.index % 24
     if 'request_intensity' not in df.columns:
@@ -89,11 +99,18 @@ def preprocessing(df):
         df['login_rate_flag'] = (df['login_attempts'] > 30).astype(int)
         
     log_cols = ['login_attempts', 'request_rate', 'request_intensity']
-    df[log_cols] = df[log_cols].fillna(df[log_cols].mean())
+    df[log_cols] = df[log_cols].fillna(df[log_cols].mean()).fillna(0)
     df.fillna({'time_of_day': 0, 'login_rate_flag': 0}, inplace=True)
     
     log_features = np.log1p(df[log_cols])
-    features_to_scale = pd.concat([log_features, df[['time_of_day', 'login_rate_flag']]], axis=1)
+    
+    features_to_scale = pd.DataFrame({
+        'login_attempts': log_features['login_attempts'],
+        'request_rate': log_features['request_rate'],
+        'request_intensity': log_features['request_intensity'],
+        'time_of_day': df['time_of_day'],
+        'login_rate_flag': df['login_rate_flag']
+    })
     
     scaled_features = scaler.transform(features_to_scale)
     return scaled_features
@@ -104,7 +121,7 @@ def detect_anomaly(pca_features):
     n_samples = len(pca_features)
     n_neighbors = min(20, n_samples - 1) if n_samples > 1 else 1
     
-    lof = LocalOutlierFactor(n_neighbors=n_neighbors, novelty=False)
+    lof = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=0.12, novelty=False)
     if n_samples > 1:
         lof_preds = lof.fit_predict(pca_features)
     else:
@@ -112,7 +129,7 @@ def detect_anomaly(pca_features):
         
     final_preds = []
     for iso, lof_p in zip(iso_preds, lof_preds):
-        if iso == -1 or lof_p == -1:
+        if iso == -1 and lof_p == -1:
             final_preds.append(-1)
         else:
             final_preds.append(1)
@@ -120,8 +137,8 @@ def detect_anomaly(pca_features):
     return np.array(final_preds)
 
 def classify_threat(pca_features):
-    global automl
-    return automl.predict(pca_features)
+    global clf
+    return clf.predict(pca_features)
 
 def generate_risk_score(anomaly_label, threat_type, request_rate, login_attempts):
     if anomaly_label == 1:
@@ -161,20 +178,33 @@ def suggest_action(risk_level):
     return actions.get(risk_level, 'Monitor')
 
 def process_logs(df):
-    global scaler, pca, iso_forest, automl
+    global scaler, pca, iso_forest, clf
     
-    req_cols = {'ip_address', 'login_attempts', 'request_rate'}
-    if not req_cols.issubset(df.columns):
-        raise ValueError(f"Missing required columns: {req_cols}")
+    if 'ip_address' not in df.columns:
+        df['ip_address'] = 'Unknown'
         
-    if scaler is None or pca is None or iso_forest is None or automl is None:
+    if scaler is None or pca is None or iso_forest is None or clf is None:
         initialize_models()
+        initialize_classifier()
         
-    scaled_features = preprocessing(df)
-    pca_features = pca.transform(scaled_features)
+    try:
+        scaled_features = preprocessing(df)
+    except Exception as e:
+        print("[INFO] Model schema mismatch detected. Retraining...")
+        initialize_models(force_retrain=True)
+        scaled_features = preprocessing(df)
+        
+    try:
+        pca_features = pca.transform(scaled_features)
+    except Exception:
+        print("[INFO] PCA schema mismatch detected. Retraining...")
+        initialize_models(force_retrain=True)
+        scaled_features = preprocessing(df)
+        pca_features = pca.transform(scaled_features)
     
     df['Anomaly_Status'] = detect_anomaly(pca_features)
-    df['Threat Type'] = classify_threat(pca_features)
+    preds = classify_threat(pca_features)
+    df['Threat Type'] = preds
     df.loc[df['Anomaly_Status'] == 1, 'Threat Type'] = 'Normal Activity'
     
     risk_scores = []
@@ -205,8 +235,10 @@ def serve_static(path):
 @app.route('/api/threats')
 def get_threats():
     csv_file = generate_dummy_csv("input_logs.csv")
-    df = pd.read_csv(csv_file)
     try:
+        df = pd.read_csv(csv_file)
+        if df.empty:
+            return jsonify([]), 200
         df = process_logs(df)
         return jsonify(df.to_dict(orient='records'))
     except Exception as e:
@@ -226,19 +258,20 @@ def upload_csv():
         
     try:
         df = pd.read_csv(file)
-        
-        required_columns = {'ip_address', 'login_attempts', 'request_rate'}
-        if not required_columns.issubset(df.columns):
-            return jsonify({"error": f"CSV must contain the following columns: {', '.join(required_columns)}"}), 400
+        if df.empty:
+            return jsonify({"error": "Uploaded CSV file is empty"}), 400
             
         df_result = process_logs(df)
         return jsonify(df_result.to_dict(orient='records'))
+    except pd.errors.EmptyDataError:
+        return jsonify({"error": "Uploaded CSV file is empty"}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
 def main():
     print("[INFO] Initializing Models...")
     initialize_models()
+    initialize_classifier()
     print("[INFO] Starting Sentinel Web Dashboard...")
     print("[INFO] Navigate to http://127.0.0.1:8080 in your browser.")
     app.run(host='127.0.0.1', port=8080, debug=False)

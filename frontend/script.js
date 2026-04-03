@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    fetchLogs();
+    console.log("Upload dataset to start analysis");
 
     document.getElementById('refreshBtn').addEventListener('click', () => {
         fetchLogs();
@@ -50,12 +50,12 @@ async function fetchLogs() {
 document.getElementById('uploadBtn').addEventListener('click', async () => {
     const fileInput = document.getElementById('fileInput');
     const file = fileInput.files[0];
-    
+
     if (!file) {
         alert('No file selected');
         return;
     }
-    
+
     if (!file.name.endsWith('.csv')) {
         alert('Invalid CSV format');
         return;
@@ -63,7 +63,7 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
 
     const formData = new FormData();
     formData.append('file', file);
-    
+
     const tbody = document.getElementById('logsBody');
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 2rem;">Analyzing uploaded data...</td></tr>';
 
@@ -72,9 +72,9 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
             method: 'POST',
             body: formData
         });
-        
+
         const data = await response.json();
-        
+
         if (!response.ok) {
             alert('Error: ' + (data.error || 'Failed to analyze file'));
             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: #f85149;">Failed to process data.</td></tr>';
