@@ -28,7 +28,7 @@ async function fetchLogs() {
             tr.style.animation = `fadeIn 0.3s ease forwards ${index * 0.05}s`;
 
             const statusBadge = `<span class="badge ${row.Status.toLowerCase()}">${row.Status}</span>`;
-            const riskClass = row['Risk Level'].toLowerCase();
+            const riskClass = (row['Risk Level'] || 'low').toLowerCase();
 
             tr.innerHTML = `
                 <td style="font-family: monospace;">${row.ip_address}</td>
